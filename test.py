@@ -23,10 +23,10 @@ def load_config(path: str = "config.yaml") -> dict:
 
 # ------------------ Dataset ------------------
 class TestPianoRollDataset(Dataset):
-    def __init__(self, csv_path, file_column, label_column, data_dir, top_k=1):
+    def __init__(self, csv_path, file_column, label_column, data_dir, top_k=1, json_path="label_index.json"):
         import json
         # Load label-index mapping from JSON
-        with open("label_index.json", "r") as f:
+        with open(json_path, "r") as f:
             self.class_to_idx = json.load(f)
         # Build classes list in index order
         self.classes = [None] * len(self.class_to_idx)
@@ -70,8 +70,9 @@ class TestPianoRollDataset(Dataset):
 # ------------------ Test Logic ------------------
 def test(cfg):
     top_k = cfg.get('top_k', 1)
+    json_path = cfg.get('json_path', 'label_index.json')
     ds = TestPianoRollDataset(
-        cfg['test_csv_chunk'], cfg['csv_file_column'], cfg['label_column'], cfg['test_dataset_dir'], top_k
+        cfg['test_csv_chunk'], cfg['csv_file_column'], cfg['label_column'], cfg['test_dataset_dir'], top_k, json_path
     )
     loader = DataLoader(
         ds,

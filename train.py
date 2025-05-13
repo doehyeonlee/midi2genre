@@ -17,7 +17,7 @@ import logging
 from sklearn.metrics import f1_score, accuracy_score
 import json
 
-def dump_label_index(name: str = 'label_index.json', class_to_idx:str = None):
+def dump_label_index(name: str, class_to_idx:str = None):
     with open(name, "w") as f:
         json.dump(class_to_idx, f, indent=2)
 # ------------------ Configuration ------------------
@@ -27,8 +27,19 @@ def load_config(path: str = "config.yaml") -> dict:
 
 # ------------------ Dataset ------------------
 class PianoRollDataset(Dataset):
-    def __init__(self, csv_path: str, midi_column: str, label_column: str, data_dir: str, data_num: int = 10000, augment: bool = False, test_csv: str = "/home/anthony16/text2midi/midicaps_splits/midicaps_chunk_2.csv"):
-        df = pd.read_csv(csv_path)[:data_num]
+    def __init__(self, csv_path: str, midi_column: str, label_column: str, data_dir: str, data_num: int = 10000, 
+                 augment: bool = False, test_csv: str = "/home/anthony16/text2midi/midicaps_splits/midicaps_chunk_2.csv",
+                 synth_num: int = None, json_path: str = "label_index.json"):
+        if synth_num is not None:
+            df_full = pd.read_csv(csv_path)
+            temp_df1 = df_full.iloc[:synth_num]
+            temp_df2 = df_full.iloc[1000 : 1000 + (data_num - synth_num)]
+            print(f"Loaded {len(temp_df1)} samples from SYNTH and {len(temp_df2)} samples from MIDICAPS")
+            df = pd.concat([temp_df1, temp_df2], ignore_index=True)
+        else:
+            df = pd.read_csv(csv_path)[:data_num]
+        print(f"Loaded {len(df)} samples")
+        self.csv_path = csv_path
         df_test = pd.read_csv(test_csv)[:2000]
 
         all_labels = pd.concat([df, df_test])[label_column].apply(ast.literal_eval)
@@ -36,7 +47,7 @@ class PianoRollDataset(Dataset):
         labels_list = df[label_column].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
         print(f"Unique labels: {unique_labels}")
         self.class_to_idx = {c: i for i, c in enumerate(unique_labels)}
-        dump_label_index(class_to_idx=self.class_to_idx)
+        dump_label_index(name=json_path, class_to_idx=self.class_to_idx)
         self.classes = unique_labels
         self.y = np.zeros((len(df), len(self.classes)), dtype=np.float32)
         for i, sub in enumerate(labels_list):
@@ -50,8 +61,10 @@ class PianoRollDataset(Dataset):
         return len(self.filenames)
 
     def __getitem__(self, idx):
+        df = pd.read_csv(self.csv_path)
         base = self.filenames[idx]
-        arr = np.load(os.path.join(self.data_dir, f"Midicaps_chunk1_{idx}.npy"))
+        arr = np.load(df['pianoroll'][idx])
+        #arr = np.load(os.path.join(self.data_dir, f"Midicaps_chunk1_{idx}.npy"))
         if self.augment:
             shift = np.random.randint(-6, 7)
             arr = np.roll(arr, shift, axis=0)
@@ -138,8 +151,10 @@ def eval_epoch(model, loader, criterion, device, threshold=0.5):
 # ------------------ Training Function ------------------
 def train(cfg):
     # Load dataset
+    json_path = cfg.get('json_path', 'label_index.json')
     ds = PianoRollDataset(
-        cfg['train_csv_chunk'], cfg['csv_file_column'], cfg['label_column'], cfg['output_dir'], cfg['data_num'], augment=cfg.get('augment', False)
+        cfg['train_csv_chunk'], cfg['csv_file_column'], cfg['label_column'], cfg['output_dir'], cfg['data_num'],
+        augment=cfg.get('augment', False), synth_num=cfg.get('synth_num', None), json_path=json_path
     )
     n = len(ds)
     train_n = int(n * cfg.get('train_split', 0.8))

@@ -4,8 +4,10 @@ dataset_split: "train"
 download_dir: "/data/anthony16/midicaps_train/cache"
 
 # 2) CSV Chunk File Settings
-train_csv_chunk: "/home/anthony16/text2midi/midicaps_splits/midicaps_chunk_1.csv"
+#train_csv_chunk: "/home/anthony16/text2midi/midicaps_splits/midicaps_chunk_1.csv"
+train_csv_chunk: "/home/anthony16/midi2genre/midicaps_trainset.csv"
 test_csv_chunk: "/home/anthony16/text2midi/midicaps_splits/midicaps_chunk_2.csv"
+custom_csv_chunk: "/home/anthony16/text2midi/midicaps_splits/midicaps_chunk_1.csv"
 
 csv_file_column: "location"        
 dataset_midi_field: "location"    
@@ -15,14 +17,17 @@ target_dir: "midicaps_train"
 origin_dir: "/data/anthony16/midicaps_train/raw/"  
 test_dataset_dir: "/data/anthony16/midicaps_test/pianoroll"
 output_dir: "/data/anthony16/midicaps_train/pianoroll"
-#output_dir: "/data/anthony16/midicaps_train/syn_pianoroll_midicaps"
+
+custom_origin_dir: "/data/anthony16/text2midi/generated_midis/chunk_1"
+custom_dataset_dir: "/data/anthony16/midicaps_train/text2midi" 
+custom_method_name: "Text2midi"  
 
 # 4) 피아노롤 변환 파라미터
 fs: 16
 target_length: 1024
 
 # 5) Genre Classification Settings
-data_num: 2000              # 사용할 데이터 수
+data_num: 10000              # 사용할 데이터 수
 label_column: "genre"    # CSV 내 장르 레이블 컬럼명
 train_split: 0.8           # 훈련/검증 분할비
 batch_size: 32             # 배치 크기
@@ -36,5 +41,7 @@ device: "cuda:0"           # "cuda" 또는 "cpu"
 logging_level: "INFO"     # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 # 7) Model Checkpoint
-best_model_path: "bestmodel_midicaps_2000.pth"  # 최적 모델 가중치 저장 경로 
-result_csv_path: "/home/anthony16/midi2genre/result_midicaps_2000.csv"
+best_model_path: "bestmodel_text2midi_10000_10p.pth"  # 최적 모델 가중치 저장 경로 
+result_csv_path: "/home/anthony16/midi2genre/result_text2midi_10000_10p.csv"
+json_path: "label_index_0.json"
+#synth_num: 1000

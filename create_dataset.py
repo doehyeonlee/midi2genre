@@ -1,133 +1,109 @@
-#!/usr/bin/env python3
-"""
-Evaluate a trained MuSeReNet single-label genre classification model on piano-roll numpy arrays.
-- Uses only the first genre label from CSV
-- Predicts single class (argmax)
-- Computes and saves per-genre Accuracy, F1-score, Balanced Accuracy, Support
-- Also reports macro-averaged metrics
-"""
 import os
 import yaml
-import ast
-import numpy as np
-import torch
 import logging
+import shutil
+import tarfile
+import numpy as np
+import pretty_midi
 import pandas as pd
-from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score
-from train import MuSeReNet
+from tqdm import tqdm
+from datasets import load_dataset
+import argparse
+from huggingface_hub import hf_hub_download
 
-# ------------------ Configuration ------------------
-def load_config(path: str = "config.yaml") -> dict:
+def setup_logging(level: str):
+    lvl = getattr(logging, level.upper(), logging.INFO)
+    logging.basicConfig(
+        format="%(asctime)s %(levelname)s: %(message)s",
+        level=lvl
+    )
+
+def load_config(path: str) -> dict:
     with open(path, 'r') as f:
         return yaml.safe_load(f)
 
-# ------------------ Dataset ------------------
-class TestPianoRollDataset(Dataset):
-    def __init__(self, csv_path, file_column, label_column, data_dir):
-        df = pd.read_csv(csv_path)
-        # use only first genre label
-        labels = df[label_column].apply(
-            lambda x: ast.literal_eval(x)[0] if isinstance(x, str) else x
-        )
-        self.classes = sorted(labels.unique())
-        self.class_to_idx = {c: i for i, c in enumerate(self.classes)}
-        self.targets = labels.map(self.class_to_idx).values
-        self.filenames = df[file_column].astype(str).tolist()
-        self.data_dir = data_dir
-
-    def __len__(self):
-        return len(self.filenames)
-
-    def __getitem__(self, idx):
-        arr = np.load(
-            os.path.join(self.data_dir, f"Midicaps_chunk2_{idx}.npy")
-        )  # shape (128, T)
-        arr = arr.astype(np.float32) / 127.0
-        arr = np.expand_dims(arr, 0)  # (1,128,T)
-        label = self.targets[idx]
-        return torch.from_numpy(arr), label
-
-# ------------------ Test Logic ------------------
-def test(cfg):
-    # load dataset
-    ds = TestPianoRollDataset(
-        cfg['test_csv_chunk'],
-        cfg['csv_file_column'],
-        cfg['label_column'],
-        cfg['test_dataset_dir']
+def download_midi_files(cfg: dict):
+    os.makedirs(cfg["origin_dir"], exist_ok=True)
+    os.makedirs("/data/anthony16/midicaps_train/cache", exist_ok=True)
+    logging.info(f"Loading HF dataset {cfg['dataset_name']} split={cfg['dataset_split']}")
+    cache_path = hf_hub_download(
+        repo_id=cfg["dataset_name"],       
+        filename="midicaps.tar.gz",  
+        repo_type="dataset",               
+        cache_dir=cfg["download_dir"] 
     )
-    loader = DataLoader(
-        ds,
-        batch_size=cfg.get('batch_size', 32),
-        shuffle=False,
-        num_workers=cfg.get('num_workers', 4)
+    target_path = os.path.join(cfg["origin_dir"], "midicaps.tar.gz")
+    shutil.copy(cache_path, target_path)
+
+    with tarfile.open(target_path, "r:gz") as tar:
+        tar.extractall(path=cfg["origin_dir"])
+    print(f"✔ Extracted to {cfg["origin_dir"]}")
+    
+
+def midi_to_pianoroll(path: str, fs: int, length: int) -> np.ndarray | None:
+    try:
+        pm = pretty_midi.PrettyMIDI(path)
+        roll = pm.get_piano_roll(fs=fs)[:128]    # (128, T)
+        roll = (roll > 0).astype(np.float32).T    # (T,128)
+        if roll.shape[0] >= length:
+            return roll[:length]
+        pad = np.zeros((length - roll.shape[0], 128), dtype=np.float32)
+        return np.vstack([roll, pad])
+    except Exception as e:
+        logging.warning(f"Pianoroll failed ({path}): {e}")
+        return None
+    
+
+def convert_all_midi(cfg: dict):
+    os.makedirs(cfg["test_dataset_dir"], exist_ok=True)
+
+    df = pd.read_csv(cfg["test_csv_chunk"])
+
+    for idx, base_name in tqdm(df[cfg["csv_file_column"]].astype(str).items(), desc="Converting to piano-roll"):
+        src = os.path.join(cfg["origin_dir"], base_name)
+        if not os.path.isfile(src):
+            print(f"[Warning] File not found: {src}")
+            continue
+        out_path = os.path.join(cfg["test_dataset_dir"], f"Midicaps_chunk2_{idx}.npy")
+        roll = midi_to_pianoroll(src, cfg["fs"], cfg["target_length"])
+        if roll is not None:
+            np.save(out_path, roll)
+        
+def convert_all_midi_customdir(cfg: dict):
+    os.makedirs(cfg["custom_dataset_dir"], exist_ok=True)
+
+    df = pd.read_csv(cfg["custom_csv_chunk"])
+
+    for idx, _ in tqdm(df[cfg["csv_file_column"]].astype(str).items(), desc="Converting to piano-roll"):
+        padded_idx = str(idx).zfill(5)
+        src = os.path.join(cfg["custom_origin_dir"], f"{padded_idx}.mid")
+        if not os.path.isfile(src):
+            print(f"[Warning] File not found: {src}")
+            continue
+        out_path = os.path.join(cfg["custom_dataset_dir"], f"Midicaps_{cfg['custom_method_name']}_{idx}.npy")
+        roll = midi_to_pianoroll(src, cfg["fs"], cfg["target_length"])
+        if roll is not None:
+            np.save(out_path, roll)
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="1) Download selected MIDI  2) Convert to piano-roll"
     )
-
-    # load model
-    device = torch.device(cfg.get('device', 'cpu'))
-    model = MuSeReNet(len(ds.classes), block_type=cfg.get('block_type', 'shallow'))
-    model.load_state_dict(
-        torch.load(cfg.get('best_model_path', 'best_model.pth'), map_location=device)
+    parser.add_argument(
+        "-c", "--config",
+        default="config.yaml",
+        help="Path to YAML config file"
     )
-    model.to(device).eval()
-
-    all_preds, all_targets = [], []
-    with torch.no_grad():
-        for x, y in loader:
-            x = x.to(device)
-            logits = model(x)
-            preds = logits.argmax(dim=1).cpu().numpy()
-            all_preds.extend(preds)
-            all_targets.extend(y)
-
-    preds = np.array(all_preds)
-    targets = np.array(all_targets)
-
-    # compute per-class metrics
-    records = []
-    acc_list, f1_list, bacc_list, support_list = [], [], [], []
-    for i, cls in enumerate(ds.classes):
-        true = (targets == i).astype(int)
-        pred = (preds == i).astype(int)
-        support = int(true.sum())
-        acc = accuracy_score(true, pred)
-        f1 = f1_score(true, pred, zero_division=0)
-        bacc = balanced_accuracy_score(true, pred)
-        records.append({
-            'genre': cls,
-            'accuracy': acc,
-            'f1': f1,
-            'balanced_accuracy': bacc,
-            'support': support
-        })
-        acc_list.append(acc)
-        f1_list.append(f1)
-        bacc_list.append(bacc)
-        support_list.append(support)
-
-    # macro metrics
-    macro_acc = np.mean(acc_list)
-    macro_f1 = np.mean(f1_list)
-    macro_bacc = np.mean(bacc_list)
-    print(f"Macro-Accuracy: {macro_acc:.4f}, Macro-F1: {macro_f1:.4f}, Macro-Balanced-Accuracy: {macro_bacc:.4f}")
-
-    # save per-genre
-    df = pd.DataFrame(records)
-    out_csv = cfg.get('result_csv_path', 'test_results.csv')
-    df.to_csv(out_csv, index=False)
-    print(f"Saved per-genre metrics to {out_csv}")
-    print(df)
-
-# ------------------ Main ------------------
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='config.yaml', help='Path to config file')
     args = parser.parse_args()
+
     cfg = load_config(args.config)
-    logging.basicConfig(
-        level=getattr(logging, cfg.get('logging_level', 'INFO').upper()),
-        format='%(asctime)s %(levelname)s %(message)s'
-    )
-    test(cfg)
+    setup_logging(cfg.get("logging_level", "INFO"))
+    logging.info("=== Pipeline started ===")
+
+    #download_midi_files(cfg)
+    #convert_all_midi(cfg)
+    convert_all_midi_customdir(cfg)
+    logging.info("=== Pipeline finished ===")
+
+if __name__ == "__main__":
+    main()

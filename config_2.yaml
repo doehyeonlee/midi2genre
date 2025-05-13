@@ -41,7 +41,7 @@ device: "cuda:1"           # "cuda" 또는 "cpu"
 logging_level: "INFO"     # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 # 7) Model Checkpoint
-best_model_path: "bestmodel_text2midi_2000_40p.pth"  # 최적 모델 가중치 저장 경로 
-result_csv_path: "/home/anthony16/midi2genre/result_text2midi_2000_40p.csv"
-synth_num: 800
+best_model_path: "bestmodel_text2midi_2000_10p.pth"  # 최적 모델 가중치 저장 경로 
+result_csv_path: "/home/anthony16/midi2genre/result_text2midi_2000_10p.csv"
+synth_num: 200
 

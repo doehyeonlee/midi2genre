@@ -34,7 +34,7 @@ class TestPianoRollDataset(Dataset):
             self.classes[idx] = lbl
         self.top_k = top_k
 
-        df = pd.read_csv(csv_path)[:2000]
+        df = pd.read_csv(csv_path)[2000:3000]
         # Parse label lists
         labels_list = df[label_column].apply(
             lambda x: ast.literal_eval(x) if isinstance(x, str) else [x]

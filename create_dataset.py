@@ -55,16 +55,16 @@ def midi_to_pianoroll(path: str, fs: int, length: int) -> np.ndarray | None:
     
 
 def convert_all_midi(cfg: dict):
-    os.makedirs(cfg["output_dir"], exist_ok=True)
+    os.makedirs(cfg["test_dataset_dir"], exist_ok=True)
 
-    df = pd.read_csv(cfg["train_csv_chunk"])
+    df = pd.read_csv(cfg["test_csv_chunk"])
 
     for idx, base_name in tqdm(df[cfg["csv_file_column"]].astype(str).items(), desc="Converting to piano-roll"):
         src = os.path.join(cfg["origin_dir"], base_name)
         if not os.path.isfile(src):
             print(f"[Warning] File not found: {src}")
             continue
-        out_path = os.path.join(cfg["output_dir"], f"Midicaps_chunk1_{idx}.npy")
+        out_path = os.path.join(cfg["test_dataset_dir"], f"Midicaps_chunk2_{idx}.npy")
         roll = midi_to_pianoroll(src, cfg["fs"], cfg["target_length"])
         if roll is not None:
             np.save(out_path, roll)

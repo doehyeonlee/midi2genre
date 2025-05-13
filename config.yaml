@@ -11,6 +11,7 @@ csv_file_column: "location"
 dataset_midi_field: "location"    
 
 # 3) Local Paths
+target_dir: "midicaps_train"
 origin_dir: "/data/anthony16/midicaps_train/raw/"  
 test_dataset_dir: "/data/anthony16/midicaps_test/pianoroll"
 output_dir: "/data/anthony16/midicaps_train/pianoroll"
@@ -21,19 +22,19 @@ fs: 16
 target_length: 1024
 
 # 5) Genre Classification Settings
-
+data_num: 2000              # 사용할 데이터 수
 label_column: "genre"    # CSV 내 장르 레이블 컬럼명
 train_split: 0.8           # 훈련/검증 분할비
 batch_size: 32             # 배치 크기
 epochs: 50                 # 학습 epoch 수
 lr: 0.001                  # 학습률
 num_workers: 4             # DataLoader 워커 수
-
+top_k: 2
 # 6) Device & Logging
 
 device: "cuda:0"           # "cuda" 또는 "cpu"
 logging_level: "INFO"     # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 # 7) Model Checkpoint
-best_model_path: "best_model_base.pth"  # 최적 모델 가중치 저장 경로
-result_csv_path: "home/anthony16/midi2genre/result"
+best_model_path: "bestmodel_midicaps_2000.pth"  # 최적 모델 가중치 저장 경로 
+result_csv_path: "/home/anthony16/midi2genre/result_midicaps_2000.csv"

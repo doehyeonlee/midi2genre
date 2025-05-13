@@ -15,7 +15,11 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, random_split
 import logging
 from sklearn.metrics import f1_score, accuracy_score
+import json
 
+def dump_label_index(name: str = 'label_index.json', class_to_idx:str = None):
+    with open(name, "w") as f:
+        json.dump(class_to_idx, f, indent=2)
 # ------------------ Configuration ------------------
 def load_config(path: str = "config.yaml") -> dict:
     with open(path, 'r') as f:
@@ -23,11 +27,16 @@ def load_config(path: str = "config.yaml") -> dict:
 
 # ------------------ Dataset ------------------
 class PianoRollDataset(Dataset):
-    def __init__(self, csv_path: str, midi_column: str, label_column: str, data_dir: str, augment: bool = False):
-        df = pd.read_csv(csv_path)
+    def __init__(self, csv_path: str, midi_column: str, label_column: str, data_dir: str, data_num: int = 10000, augment: bool = False, test_csv: str = "/home/anthony16/text2midi/midicaps_splits/midicaps_chunk_2.csv"):
+        df = pd.read_csv(csv_path)[:data_num]
+        df_test = pd.read_csv(test_csv)[:2000]
+
+        all_labels = pd.concat([df, df_test])[label_column].apply(ast.literal_eval)
+        unique_labels = sorted({lbl for sub in all_labels for lbl in sub})
         labels_list = df[label_column].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-        unique_labels = sorted({lbl for sub in labels_list for lbl in sub})
+        print(f"Unique labels: {unique_labels}")
         self.class_to_idx = {c: i for i, c in enumerate(unique_labels)}
+        dump_label_index(class_to_idx=self.class_to_idx)
         self.classes = unique_labels
         self.y = np.zeros((len(df), len(self.classes)), dtype=np.float32)
         for i, sub in enumerate(labels_list):
@@ -130,7 +139,7 @@ def eval_epoch(model, loader, criterion, device, threshold=0.5):
 def train(cfg):
     # Load dataset
     ds = PianoRollDataset(
-        cfg['train_csv_chunk'], cfg['csv_file_column'], cfg['label_column'], cfg['output_dir'], augment=cfg.get('augment', False)
+        cfg['train_csv_chunk'], cfg['csv_file_column'], cfg['label_column'], cfg['output_dir'], cfg['data_num'], augment=cfg.get('augment', False)
     )
     n = len(ds)
     train_n = int(n * cfg.get('train_split', 0.8))
